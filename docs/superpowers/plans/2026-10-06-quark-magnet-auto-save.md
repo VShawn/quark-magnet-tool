@@ -14,7 +14,7 @@
 
 ## 关键背景（实现者必读）
 
-1. **模板几何（已核对，150% 缩放物理像素）：** 弹窗截图宽 1080px；标题模板位于弹窗左上角偏移 (44, 22)；× 关闭钮中心 (1047, 48)（即相对标题模板左上偏移 (1003, 26)）；btn_save 在 1.jpg (685,770)-(1065,885)；btn_speed_save 在 2.jpg (687,763)-(1055,833)。这四个模板已生成在 `templates/`，勿重新裁剪。
+1. **模板几何（已核对，150% 缩放物理像素）：** 弹窗截图宽 1080px；标题模板位于弹窗左上角偏移 (44, 22)；× 关闭钮中心实测 (1042, 48)（即相对标题模板左上偏移 (998, 26)）；btn_save 在 1.jpg (685,770)-(1065,885)；btn_speed_save 在 2.jpg (687,763)-(1055,833)。这四个模板已生成在 `templates/`，勿重新裁剪。
 2. **DPI 适配：** 程序启动即 `SetProcessDpiAwareness(2)`；截图为物理像素。模板摄于 150% 屏，目标屏理论缩放 = `system_scale()/1.5`，匹配时在 ±20%（步进5%）范围多尺度尝试。
 3. **Esc 无法关闭夸克弹窗**——关闭只走点右上角 ×（模板匹配，失败则按标题锚点+固定偏移几何推算）。
 4. **点击决策：** btn_save 与 btn_speed_save 两个模板都算分取 argmax，只有 ≥ 阈值者才点，防止把「高速下载」点错。
@@ -62,6 +62,7 @@ pyinstaller
 [pytest]
 addopts = -m "not manual"
 testpaths = tests
+pythonpath = src
 markers =
     manual: 需要真实键鼠/剪贴板环境，用 -m manual 显式运行
 ```
@@ -607,10 +608,22 @@ from PIL import ImageGrab
 user32 = ctypes.windll.user32
 kernel32 = ctypes.windll.kernel32
 
+SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN = 76, 77
+SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN = 78, 79
+
 # 模板摄于150%缩放屏。弹窗几何(150%物理px)：宽1080；
-# 标题模板距弹窗左上(44,22)；×中心相对标题模板左上偏移(1003,26)
+# 标题模板距弹窗左上(44,22)；×中心实测(1042,48)，相对标题模板左上偏移(998,26)
 POPUP_W = 1080
-CLOSE_DX, CLOSE_DY = 1003, 26
+CLOSE_DX, CLOSE_DY = 998, 26
+
+# 64位Python下必须声明句柄类API的类型，否则64位指针被截断为32位导致崩溃
+kernel32.GlobalAlloc.restype = ctypes.c_void_p
+kernel32.GlobalLock.restype = ctypes.c_void_p
+kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+user32.GetClipboardData.restype = ctypes.c_void_p
+user32.SetClipboardData.restype = ctypes.c_void_p
+user32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
 
 
 def scales_around(center, spread=0.20, step=0.05):
@@ -960,10 +973,13 @@ OUT = os.path.join(ROOT, "_verify")
 os.makedirs(OUT, exist_ok=True)
 
 tpls = load_templates(os.path.join(ROOT, "templates"))
-scales = scales_around(1 / 1.5)  # 本机100%屏，模板来自150%
+scales = scales_around(1 / 1.5)  # 100%屏的生产缩放档
 
 for img_name in ("1.jpg", "2.jpg"):
     img = _imread_gray(os.path.join(ROOT, img_name))
+    # 原图是150%物理像素，模板与原图同尺度；先缩到2/3模拟100%屏再匹配
+    img = cv2.resize(img, (img.shape[1] * 2 // 3, img.shape[0] * 2 // 3),
+                     interpolation=cv2.INTER_AREA)
     vis = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
     print(f"== {img_name} ==")
     for name in ("title", "btn_save", "btn_speed_save", "btn_close_x"):
@@ -985,10 +1001,11 @@ for img_name in ("1.jpg", "2.jpg"):
 - [ ] **Step 4: 运行离线验证**
 
 Run: `.venv/Scripts/python.exe tools/offline_verify.py`
-Expected 控制台输出：
-- 1.jpg：`title` score≥0.95；`btn_save` score≥0.9；`btn_speed_save` score明显更低（<0.8）；`btn_close_x` score≥0.75
-- 2.jpg：`title` score≥0.95；`btn_speed_save` score≥0.9；`btn_save` score更低；`btn_close_x` score≥0.75
-- **关键判据：每张图中 argmax 按钮与该图应点的按钮一致**（1.jpg→btn_save，2.jpg→btn_speed_save）
+Expected 控制台输出（实测参考值，缩放 2/3 后）：
+- 1.jpg：`title` ≥0.85（实测约0.887）；`btn_save` ≥0.95（实测约0.975）；`btn_speed_save` 约0.82（可能也过0.8阈值，同为绿框）；`btn_close_x` ≥0.75
+- 2.jpg：`title` ≥0.85；`btn_speed_save` ≥0.90（实测约0.909）；`btn_save` 约0.89（也可能过0.8）；`btn_close_x` ≥0.75
+- **关键判据：argmax 正确**——1.jpg 中得分最高的按钮模板必须是 `btn_save`，2.jpg 中必须是 `btn_speed_save`。两个模板同时过阈值属正常，运行时 `find_button` 取 argmax。
+- 注意 2.jpg 上两个按钮分差较薄（实测 0.909 vs 0.888）；若端到端出现点错按钮，按 Step 5 备用方案重裁模板。
 
 - [ ] **Step 5: 目视核对标注图**
 
@@ -1299,7 +1316,7 @@ if __name__ == "__main__":
 - [ ] **Step 2: 冒烟——无txt时的提示路径**
 
 Run: `cd "I:\夸克磁力链工具" && echo "" | .venv/Scripts/python.exe src/main.py 不存在的文件.txt`
-Expected: 打印"未找到磁力链文件"、"用法…"，然后退出；同时生成 `main.json`（默认配置）。检查 `cat main.json` 内容与 DEFAULTS 一致。
+Expected: 打印"未找到磁力链文件"、"用法…"，然后退出；同时生成 `src/main.json`（dev 模式下配置与 `sys.argv[0]` 同目录，即 src/；exe 冻结后在 exe 旁）。检查 `cat src/main.json` 内容与 DEFAULTS 一致。
 
 - [ ] **Step 3: 冒烟——空链接文件**
 
@@ -1375,8 +1392,10 @@ Run: `printf 'magnet:?xt=urn:btih:%s\n' "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 终端B：`echo "" | .venv/Scripts/python.exe src/main.py 磁力链测试.txt`
 Expected：
 - B 端日志显示弹窗检测→`成功 (btn_save)`→汇总"成功 1 条"
-- A 端打印 `MOCK_CLICK x=... y=...` 后窗口关闭，且点击坐标落在缩放后的深色按钮区域内（约 x∈[455,712], y∈[510,593]，1080 图缩放 2/3 后按钮区 (683,766)-(1067,889)×2/3）
+- A 端打印 `MOCK_CLICK x=... y=...` 后窗口关闭，且点击坐标落在按钮屏幕区域内（图内按钮 (683,766)-(1067,889) 缩 2/3 后为 (455,511)-(711,593)，加 mock 居中偏移——以 1920×1080 屏为例偏移 (600,235)——即屏幕坐标约 x∈[1055,1311], y∈[746,828]）
 - 生成 `done.txt` 含一行 40 个 a
+
+注：mock 是降采样位图，title 匹配分实测约 0.887，距阈值 0.8 余量不大；若弹窗始终检测不到，把自动生成的 `src/main.json` 中 `match_threshold` 临时调到 0.75 再试。
 
 - [ ] **Step 4: 端到端——模拟弹窗2（已缓存场景）**
 
@@ -1390,7 +1409,7 @@ Expected: 日志显示"已完成跳过 2 条"，无待处理则提示"所有磁�
 
 - [ ] **Step 6: 清理并 Commit**
 
-Run: `rm done.txt 磁力链测试.txt quark_auto_save.log main.json; rm -rf 异常截图`
+Run: `rm done.txt 磁力链测试.txt quark_auto_save.log src/main.json; rm -rf 异常截图 _verify`
 
 ```bash
 git add tools/mock_dialog.py
@@ -1486,4 +1505,5 @@ git commit -m "build: PyInstaller单文件打包与使用说明"
 - [ ] 独立 exe（Task 12）
 - [ ] 保存失败/解析失败容错：重试1次→跳过→汇总（Task 9 测试 + error_* 模板机制）
 - [ ] 断点续跑 done.txt（Task 11 Step 5）
+- [ ] 实机验证（用户夸克电脑 2~3 条试跑）：交付后进行，超出本计划；若真实环境 title 匹配不稳，优先调 config 的 `match_threshold`（已支持）
 - [ ] git 记录完整（每个 Task 至少一个 commit）
