@@ -19,3 +19,18 @@ def test_merge_existing_and_drop_unknown(tmp_path):
 
 def test_default_config_path_ends_with_json():
     assert default_config_path().endswith(".json")
+
+
+def test_corrupt_json_regenerates_with_backup(tmp_path):
+    p = tmp_path / "x.json"
+    p.write_text("{broken", encoding="utf-8")
+    cfg = load_config(str(p))
+    assert cfg["popup_timeout_sec"] == 20
+    assert (tmp_path / "x.json.bak").read_text(encoding="utf-8") == "{broken"
+    assert json.load(open(p, encoding="utf-8")) == DEFAULTS
+
+
+def test_non_dict_json_regenerates(tmp_path):
+    p = tmp_path / "x.json"
+    p.write_text("[]", encoding="utf-8")
+    assert load_config(str(p)) == DEFAULTS

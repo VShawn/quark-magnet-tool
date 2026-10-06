@@ -32,13 +32,28 @@ def exe_dir():
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def _write_default(path):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(DEFAULTS, f, ensure_ascii=False, indent=2)
+
+
 def load_config(path):
     if not os.path.exists(path):
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(DEFAULTS, f, ensure_ascii=False, indent=2)
+        _write_default(path)
         return dict(DEFAULTS)
-    with open(path, encoding="utf-8") as f:
-        data = json.load(f)
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            raise ValueError("config json top level must be an object")
+    except (json.JSONDecodeError, ValueError, UnicodeDecodeError):
+        # 用户手改配置损坏时自愈：损坏文件留作 .bak，重新生成默认配置
+        try:
+            os.replace(path, path + ".bak")
+        except OSError:
+            pass
+        _write_default(path)
+        return dict(DEFAULTS)
     cfg = dict(DEFAULTS)
     cfg.update({k: v for k, v in data.items() if k in DEFAULTS})
     return cfg

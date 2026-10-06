@@ -15,12 +15,6 @@ def _imread_gray(path):
     return cv2.imdecode(data, cv2.IMREAD_GRAYSCALE)
 
 
-def _imwrite_png(path, bgr):
-    ok, buf = cv2.imencode(".png", bgr)
-    with open(path, "wb") as f:
-        f.write(buf.tobytes())
-
-
 def resource_root():
     if getattr(sys, "frozen", False):
         return sys._MEIPASS
@@ -44,7 +38,7 @@ def load_templates(external_dir):
             out[name] = img
     if missing:
         raise FileNotFoundError(
-            f"缺少模板 {missing}；查找过 {external_dir} 与 {internal_dir}")
+            f"无法读取或缺少模板 {missing}；查找过 {external_dir} 与 {internal_dir}")
     for p in sorted(glob.glob(os.path.join(external_dir, "error_*.png"))):
         out[os.path.splitext(os.path.basename(p))[0]] = _imread_gray(p)
     return out

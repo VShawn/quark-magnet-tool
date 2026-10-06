@@ -7,3 +7,4 @@ cd /d "%~dp0"
   src\main.py
 echo.
 echo 产物: dist\夸克磁力链工具.exe
+pause

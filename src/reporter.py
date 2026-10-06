@@ -1,6 +1,8 @@
 import logging
 import os
 
+from orchestrator import FAIL, SUCCESS
+
 
 def setup_logging(log_file):
     logger = logging.getLogger("quark")
@@ -29,8 +31,8 @@ def append_done(path, infohash):
 
 
 def format_summary(results):
-    ok = [r for r in results if r.status == "成功"]
-    bad = [r for r in results if r.status == "失败"]
+    ok = [r for r in results if r.status == SUCCESS]
+    bad = [r for r in results if r.status == FAIL]
     lines = ["========== 汇总 ==========",
              f"成功 {len(ok)} 条，失败 {len(bad)} 条"]
     for r in bad:
