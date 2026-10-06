@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+build/
+dist/
+_verify/
+_crop_probe/
+异常截图/
+done.txt
+quark_auto_save.log
+main.json
+磁力链.txt
+磁力链测试.txt
+*.egg-info/
