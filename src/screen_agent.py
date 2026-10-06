@@ -147,3 +147,94 @@ class ScreenAgent:
             inp.mi = _MOUSEINPUT(0, 0, 0, flag, 0, 0)
             user32.SendInput(1, ctypes.byref(inp), ctypes.sizeof(_INPUT))
             time.sleep(0.05)
+
+    # ---- 以下方法属于 ScreenAgent 类 ----
+    def _popup_box(self, tx, ty, sc, gray):
+        x = max(0, tx - int(55 * sc))
+        y = max(0, ty - int(25 * sc))
+        w = min(gray.shape[1] - x, int((POPUP_W + 40) * sc))
+        h = min(gray.shape[0] - y, int(1060 * sc))
+        return {"x": x, "y": y, "w": w, "h": h, "scale": sc,
+                "title_x": tx, "title_y": ty}
+
+    @staticmethod
+    def _roi(gray, box):
+        return gray[box["y"]:box["y"] + box["h"], box["x"]:box["x"] + box["w"]]
+
+    def wait_popup(self, timeout):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            gray = self._grab()
+            m = match_template(gray, self.templates["title"],
+                               scales_around(self.system_scale() / 1.5))
+            if m and m[0] >= self.cfg["match_threshold"]:
+                score, tx, ty, _w, _h, sc = m
+                return self._popup_box(tx, ty, sc, gray)
+            time.sleep(self.cfg["poll_interval_ms"] / 1000.0)
+        return None
+
+    def find_button(self, popup, timeout):
+        deadline = time.time() + timeout
+        scales = scales_around(popup["scale"], spread=0.10)
+        while time.time() < deadline:
+            gray = self._grab()
+            roi = self._roi(gray, popup)
+            best_name, best_m = None, None
+            for name in ("btn_save", "btn_speed_save"):
+                m = match_template(roi, self.templates[name], scales)
+                if m and (best_m is None or m[0] > best_m[0]):
+                    best_name, best_m = name, m
+            if best_m and best_m[0] >= self.cfg["match_threshold"]:
+                score, x, y, w, h, sc = best_m
+                gx, gy = popup["x"] + x + w // 2, popup["y"] + y + h // 2
+                return {"name": best_name, "score": round(score, 3),
+                        "screen": self.to_screen(gx, gy)}
+            for name, tmpl in self.templates.items():
+                if name.startswith("error_"):
+                    m = match_template(roi, tmpl, scales)
+                    if m and m[0] >= self.cfg["match_threshold"]:
+                        return {"name": f"error:{name}", "score": round(m[0], 3),
+                                "screen": None}
+            time.sleep(self.cfg["poll_interval_ms"] / 1000.0)
+        return None
+
+    def wait_popup_closed(self, popup, timeout):
+        deadline = time.time() + timeout
+        gone, need = 0, 2
+        while time.time() < deadline:
+            gray = self._grab()
+            m = match_template(gray, self.templates["title"],
+                               scales_around(popup["scale"], spread=0.10))
+            if m and m[0] >= self.cfg["match_threshold"]:
+                gone = 0
+            else:
+                gone += 1
+                if gone >= need:
+                    return True
+            time.sleep(self.cfg["poll_interval_ms"] / 1000.0)
+        return False
+
+    def close_popup(self, popup):
+        gray = self._grab()
+        m = match_template(self._roi(gray, popup), self.templates["btn_close_x"],
+                           scales_around(popup["scale"], spread=0.10))
+        if m and m[0] >= self.cfg["match_threshold"] - 0.05:
+            _s, x, y, w, h, _sc = m
+            gx, gy = popup["x"] + x + w // 2, popup["y"] + y + h // 2
+        else:  # 几何推算：×中心相对标题模板左上固定偏移
+            gx = popup["title_x"] + int(CLOSE_DX * popup["scale"])
+            gy = popup["title_y"] + int(CLOSE_DY * popup["scale"])
+        sx, sy = self.to_screen(gx, gy)
+        self.click_at(sx, sy)
+        time.sleep(1.0)
+
+    def save_screenshot(self, tag):
+        os.makedirs(self.cfg["screenshot_dir"], exist_ok=True)
+        path = os.path.join(self.cfg["screenshot_dir"],
+                            time.strftime("%Y%m%d_%H%M%S") + f"_{tag}.png")
+        if self._last_bgr is None:
+            self._grab()
+        ok, buf = cv2.imencode(".png", self._last_bgr)
+        with open(path, "wb") as f:
+            f.write(buf.tobytes())
+        return path
