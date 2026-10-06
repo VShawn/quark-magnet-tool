@@ -95,7 +95,8 @@ class ScreenAgent:
         w, h = self._size
         img = ImageGrab.grab(bbox=(x, y, x + w, y + h), all_screens=True)
         self._last_bgr = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-        return self._last_bgr
+        # 模板均为单通道灰度图，匹配统一用灰度；BGR 副本仅供 save_screenshot
+        return cv2.cvtColor(self._last_bgr, cv2.COLOR_BGR2GRAY)
 
     def to_screen(self, gx, gy):
         return self._origin[0] + gx, self._origin[1] + gy
