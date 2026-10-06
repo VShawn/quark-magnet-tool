@@ -11,3 +11,5 @@ main.json
 磁力链.txt
 磁力链测试.txt
 *.egg-info/
+.pytest_cache/
+*.spec

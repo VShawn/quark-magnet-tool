@@ -1,4 +1,11 @@
 import sys
+import ctypes
+
+try:
+    ctypes.windll.shcore.SetProcessDpiAwareness(2)
+except Exception:
+    ctypes.windll.user32.SetProcessDPIAware()
+
 import tkinter as tk
 from PIL import Image, ImageTk
 
@@ -35,4 +42,5 @@ def on_click(e):
 
 
 root.after(int(delay * 1000), show)
+root.after(int((delay + 60) * 1000), root.destroy)  # 兜底自动关闭，防止卡屏
 root.mainloop()
