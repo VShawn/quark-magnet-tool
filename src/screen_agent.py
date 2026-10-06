@@ -179,12 +179,21 @@ class ScreenAgent:
         while time.time() < deadline:
             gray = self._grab()
             roi = self._roi(gray, popup)
-            best_name, best_m = None, None
+            best_name, best_m, loser = None, None, None
             for name in ("btn_save", "btn_speed_save"):
                 m = match_template(roi, self.templates[name], scales)
-                if m and (best_m is None or m[0] > best_m[0]):
+                if not m:
+                    continue
+                if best_m is None or m[0] > best_m[0]:
+                    if best_m is not None:
+                        loser = best_m[0]
                     best_name, best_m = name, m
+                else:
+                    loser = max(loser or 0, m[0])
             if best_m and best_m[0] >= self.cfg["match_threshold"]:
+                if loser is not None and best_m[0] - loser < 0.03:
+                    time.sleep(self.cfg["poll_interval_ms"] / 1000.0)
+                    continue  # 两按钮得分过近，宁可不点也不点错
                 score, x, y, w, h, sc = best_m
                 gx, gy = popup["x"] + x + w // 2, popup["y"] + y + h // 2
                 return {"name": best_name, "score": round(score, 3),
