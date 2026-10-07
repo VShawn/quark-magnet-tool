@@ -22,13 +22,16 @@ class FakeAgent:
     def __init__(self):
         self.steps = []
         self.cur = None
-        self.clicks, self.closes = [], []
+        self.clicks, self.closes, self.writes = [], [], []
 
     def step(self, clipboard=True, popup=None, button=None, closed=True):
         self.steps.append(dict(clipboard=clipboard, popup=popup,
                                button=button, closed=closed))
 
     def set_clipboard(self, text):
+        self.writes.append(text)
+        if not text.startswith("magnet:"):
+            return True  # 占位写入不消耗步骤
         self.cur = self.steps.pop(0)
         return self.cur["clipboard"]
 
@@ -77,6 +80,16 @@ def test_popup_timeout_retry_then_success():
     a.step(popup=POPUP, button=btn())
     rs = run_one(a)
     assert rs[0].status == SUCCESS and not a.steps
+
+
+def test_retry_writes_sentinel_before_relink():
+    a = FakeAgent()
+    a.step(popup=None)
+    a.step(popup=POPUP, button=btn())
+    link = "magnet:?xt=urn:btih:" + "b" * 40
+    rs = run_one(a, link)
+    assert rs[0].status == SUCCESS
+    assert a.writes == [link, "quark-retry-reset", link]
 
 
 def test_unknown_dialog_retries_then_fails():

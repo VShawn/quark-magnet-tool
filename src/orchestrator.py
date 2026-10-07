@@ -29,6 +29,10 @@ class Orchestrator:
         return self.results
 
     def process(self, index, link, attempt=0):
+        if attempt > 0:
+            # 夸克只响应剪贴板“内容变化”：重试同一链接前先写占位内容，确保再次触发弹窗
+            self.agent.set_clipboard("quark-retry-reset")
+            time.sleep(0.5)
         if not self.agent.set_clipboard(link):
             return self._retry_or_fail(index, link, attempt, "剪贴板写入失败")
         popup = self.agent.wait_popup(self.cfg["popup_timeout_sec"])
