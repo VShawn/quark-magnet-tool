@@ -1,7 +1,20 @@
 import cv2
 import numpy as np
 
-from screen_agent import match_template, scales_around
+from screen_agent import _box_is_blue, _iou, match_template, scales_around
+
+
+def test_iou():
+    assert _iou((0, 0, 10, 10), (0, 0, 10, 10)) == 1.0
+    assert _iou((0, 0, 10, 10), (20, 20, 10, 10)) == 0.0
+    assert abs(_iou((0, 0, 10, 10), (5, 0, 10, 10)) - 50.0 / 150.0) < 1e-6
+
+
+def test_box_is_blue():
+    dark = np.full((30, 60, 3), (63, 63, 58), np.uint8)
+    blue = np.full((30, 60, 3), (255, 92, 43), np.uint8)
+    assert not _box_is_blue(dark, 0, 0, 60, 30)
+    assert _box_is_blue(blue, 0, 0, 60, 30)
 
 
 def test_scales_around_range():

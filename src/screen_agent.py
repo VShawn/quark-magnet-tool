@@ -53,6 +53,23 @@ def match_template(gray, tmpl, scales):
     return best
 
 
+def _box_is_blue(bgr, x, y, w, h):
+    # 灰度归一化匹配分不清深色保存钮与蓝色“高速下载”钮（实测均值B-R：深色≈19，蓝色≈110）
+    b, _g, r = bgr[y:y + h, x:x + w].reshape(-1, 3).mean(axis=0)
+    return b - r > 40
+
+
+def _iou(a, b):
+    ax, ay, aw, ah = a
+    bx, by, bw, bh = b
+    ix = max(0, min(ax + aw, bx + bw) - max(ax, bx))
+    iy = max(0, min(ay + ah, by + bh) - max(ay, by))
+    inter = ix * iy
+    if inter == 0:
+        return 0.0
+    return inter / float(aw * ah + bw * bh - inter)
+
+
 class _MOUSEINPUT(ctypes.Structure):
     _fields_ = [("dx", ctypes.c_long), ("dy", ctypes.c_long),
                 ("mouseData", ctypes.c_ulong), ("dwFlags", ctypes.c_ulong),
@@ -180,24 +197,28 @@ class ScreenAgent:
         while time.time() < deadline:
             gray = self._grab()
             roi = self._roi(gray, popup)
-            best_name, best_m, loser = None, None, None
+            roi_bgr = self._roi(self._last_bgr, popup)
+            cands = []
             for name in ("btn_save", "btn_speed_save"):
                 m = match_template(roi, self.templates[name], scales)
-                if not m:
+                if not m or m[0] < self.cfg["match_threshold"]:
                     continue
-                if best_m is None or m[0] > best_m[0]:
-                    if best_m is not None:
-                        loser = best_m[0]
-                    best_name, best_m = name, m
-                else:
-                    loser = max(loser or 0, m[0])
-            if best_m and best_m[0] >= self.cfg["match_threshold"]:
-                if loser is not None and best_m[0] - loser < 0.03:
+                _s, x, y, w, h, _sc = m
+                if _box_is_blue(roi_bgr, x, y, w, h):
+                    continue  # 深色按钮模板串扰到蓝色“高速下载”钮：按颜色剔除
+                cands.append((name, m[0], (x, y, w, h)))
+            if cands:
+                cands.sort(key=lambda c: c[1], reverse=True)
+                name, score, box = cands[0]
+                # 同一按钮上的重叠命中不算歧义；只有不同位置的候选才要求胜差
+                rival = max((c[1] for c in cands[1:] if _iou(box, c[2]) < 0.5),
+                            default=None)
+                if rival is not None and score - rival < 0.03:
                     time.sleep(self.cfg["poll_interval_ms"] / 1000.0)
-                    continue  # 两按钮得分过近，宁可不点也不点错
-                score, x, y, w, h, sc = best_m
-                gx, gy = popup["x"] + x + w // 2, popup["y"] + y + h // 2
-                return {"name": best_name, "score": round(score, 3),
+                    continue  # 宁可不点也不点错，交给重试
+                gx = popup["x"] + box[0] + box[2] // 2
+                gy = popup["y"] + box[1] + box[3] // 2
+                return {"name": name, "score": round(score, 3),
                         "screen": self.to_screen(gx, gy)}
             for name, tmpl in self.templates.items():
                 if name.startswith("error_"):
