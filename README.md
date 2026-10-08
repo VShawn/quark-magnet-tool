@@ -14,7 +14,7 @@
 
 ## 快速开始
 
-1. 从 [Releases](../../releases) 下载 `夸克磁力链工具.exe`
+1. 从 [Releases](../../releases) 下载 exe（Release 附件名为 `quark-magnet-tool.exe`，GitHub 附件 API 不支持中文文件名；建议重命名为 `夸克磁力链工具.exe`，不改名也可正常使用）
 2. 与 `磁力链.txt` 放同一目录，双击运行（或把 txt 拖到 exe 图标上）
 3. 运行期间**不要遮挡屏幕、不要动鼠标**；Ctrl+C 随时停止
 
