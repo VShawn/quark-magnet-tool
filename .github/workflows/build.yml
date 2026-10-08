@@ -60,14 +60,25 @@ jobs:
           name: 夸克磁力链工具-${{ needs.build.outputs.version }}
           path: artifact
 
-      # softprops/action-gh-release 上传非 ASCII 附件名会丢失变成 default.exe，改用 gh CLI
+      # Release 附件上传 API 会丢失非 ASCII 文件名（变成 default.exe）：
+      # 先归一为 ASCII 名上传，再用 PATCH 接口改回中文名
+      - name: Normalize file name
+        run: |
+          ls -la artifact/
+          exe=$(find artifact -type f -name '*.exe' | head -1)
+          mv "$exe" artifact/quark_tool.exe
+
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.build.outputs.version }}
-        run: >
-          gh release create "$VERSION" --target "${{ github.sha }}"
-          --title "夸克磁力链工具 $VERSION"
-          --notes "自动构建，版本号 = 提交日期 + 短SHA（commit ${{ github.sha }}）。下载 夸克磁力链工具.exe，与 磁力链.txt 放同一目录双击运行。"
-          "artifact/夸克磁力链工具.exe"
+        run: |
+          gh release create "$VERSION" --target "${{ github.sha }}" \
+            --title "夸克磁力链工具 $VERSION" \
+            --notes "自动构建，版本号 = 提交日期 + 短SHA（commit ${{ github.sha }}）。下载 夸克磁力链工具.exe，与 磁力链.txt 放同一目录双击运行。" \
+            "artifact/quark_tool.exe"
+          ASSET_ID=$(gh api "repos/$GH_REPO/releases/tags/$VERSION" --jq '.assets[0].id')
+          gh api -X PATCH "repos/$GH_REPO/releases/assets/$ASSET_ID" -f name="夸克磁力链工具.exe"
+          echo "final asset name:"
+          gh api "repos/$GH_REPO/releases/tags/$VERSION" --jq '.assets[].name'
