@@ -1,0 +1,72 @@
+name: build
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.lock.txt
+
+      - name: Run tests
+        run: python -m pytest -v
+
+      - name: Set version (commit date + short sha)
+        id: version
+        shell: pwsh
+        run: |
+          $d = git log -1 --format=%cd --date=format:%Y%m%d
+          $sha = "${{ github.sha }}".Substring(0, 7)
+          "version=v$d-$sha" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build exe
+        run: >
+          pyinstaller --noconfirm --clean --onefile --console
+          --name 夸克磁力链工具
+          --paths src
+          --add-data "templates;templates"
+          src/main.py
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: 夸克磁力链工具-${{ steps.version.outputs.version }}
+          path: dist/夸克磁力链工具.exe
+
+  release:
+    needs: build
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download exe
+        uses: actions/download-artifact@v4
+        with:
+          name: 夸克磁力链工具-${{ needs.build.outputs.version }}
+          path: artifact
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.version }}
+          name: 夸克磁力链工具 ${{ needs.build.outputs.version }}
+          body: |
+            自动构建，版本号 = 提交日期 + 短SHA（commit ${{ github.sha }}）。
+
+            下载 `夸克磁力链工具.exe`，与 `磁力链.txt` 放同一目录双击运行。
+          files: artifact/夸克磁力链工具.exe
