@@ -60,13 +60,13 @@ jobs:
           name: 夸克磁力链工具-${{ needs.build.outputs.version }}
           path: artifact
 
+      # softprops/action-gh-release 上传非 ASCII 附件名会丢失变成 default.exe，改用 gh CLI
       - name: Publish release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ needs.build.outputs.version }}
-          name: 夸克磁力链工具 ${{ needs.build.outputs.version }}
-          body: |
-            自动构建，版本号 = 提交日期 + 短SHA（commit ${{ github.sha }}）。
-
-            下载 `夸克磁力链工具.exe`，与 `磁力链.txt` 放同一目录双击运行。
-          files: artifact/夸克磁力链工具.exe
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: >
+          gh release create "$VERSION" --target "${{ github.sha }}"
+          --title "夸克磁力链工具 $VERSION"
+          --notes "自动构建，版本号 = 提交日期 + 短SHA（commit ${{ github.sha }}）。下载 夸克磁力链工具.exe，与 磁力链.txt 放同一目录双击运行。"
+          "artifact/夸克磁力链工具.exe"
